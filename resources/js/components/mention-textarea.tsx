@@ -360,6 +360,7 @@ export function MentionTextarea({
 
         // Once the caret leaves where typing left it, coming back isn't typing either.
         const isTyping =
+            textarea.selectionStart === textarea.selectionEnd &&
             typedAt.current === `${textarea.selectionStart}:${textarea.value}`;
 
         if (!isTyping) {
@@ -829,11 +830,16 @@ export function MentionTextarea({
                     }
 
                     close();
-                    // The selection set next comes from typing too, so it may suggest what is being typed.
-                    const position = Math.min(caret, limited.length);
-                    typedAt.current = `${position}:${limited}`;
                     requestAnimationFrame(() => {
+                        const position = Math.min(caret, limited.length);
                         target.setSelectionRange(position, position);
+
+                        // Unless something else was typed meanwhile, the caret is back where typing left it, which may
+                        // suggest what is being typed.
+                        if (target.value === limited) {
+                            typedAt.current = `${position}:${limited}`;
+                            track(target);
+                        }
                     });
                 }}
                 onSelect={(event: SyntheticEvent<HTMLTextAreaElement>) => {

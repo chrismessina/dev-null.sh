@@ -374,3 +374,35 @@ test('suggests hashtags after typing an emoji shortcode before them', () => {
         query: 'la',
     });
 });
+
+test('extending the selection and collapsing it again does not reopen hashtag suggestions', () => {
+    const textarea = fakeTextarea('#laravel', 3);
+
+    assert.equal(type(textarea)?.constructor, Object);
+
+    textarea.setSelectionRange(3, 4);
+    assert.equal(select(textarea), null);
+
+    textarea.setSelectionRange(3, 3);
+    assert.equal(select(textarea), null);
+});
+
+test('suggests hashtags after a shortcode is replaced, even when the browser reports the caret at the end first', () => {
+    const textarea = fakeTextarea(':fire: #la tail', 10);
+    let draft = textarea.value;
+
+    type(textarea, (changed) => (draft = changed));
+    // React puts the new draft into the textarea, which moves the caret to its end until the frame puts it back.
+    textarea.value = draft;
+    textarea.setSelectionRange(draft.length, draft.length);
+    select(textarea);
+    flushFrames();
+
+    assert.equal(textarea.value, '🔥 #la tail');
+    assert.deepEqual(state[0], { kind: 'hashtag', start: 3, query: 'la' });
+    assert.deepEqual(select(textarea), {
+        kind: 'hashtag',
+        start: 3,
+        query: 'la',
+    });
+});
