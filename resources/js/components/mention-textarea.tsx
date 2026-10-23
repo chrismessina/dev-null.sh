@@ -10,7 +10,11 @@ import { UserAvatar } from '@/components/user-avatar';
 import { typedProse } from '@/lib/code';
 import type { EmojiSuggestion } from '@/lib/emoji';
 import { emojifyInput, searchEmoji } from '@/lib/emoji';
-import { hashtagBeforeCaret } from '@/lib/hashtags';
+import {
+    completedHashtag,
+    hashtagBeforeCaret,
+    restOfHashtag,
+} from '@/lib/hashtags';
 import { issueReferenceBeforeCaret } from '@/lib/issue-reference';
 import { wordSoFar } from '@/lib/mentions';
 import { suggestionPosition } from '@/lib/suggestion-position';
@@ -308,6 +312,8 @@ export function MentionTextarea({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const listRef = useRef<HTMLUListElement>(null);
     const dismissedIssue = useRef<string | null>(null);
+    // Where typing last left the caret, so hashtags are suggested while typing one, not when the caret moves into one.
+    const typedAt = useRef<string | null>(null);
     const [trigger, setTrigger] = useState<Trigger | null>(null);
     const [position, setPosition] = useState<Position | null>(null);
     const [results, setResults] = useState<Suggestions | null>(null);
@@ -351,6 +357,15 @@ export function MentionTextarea({
             suggestsIssues,
             suggestsHashtags,
         );
+
+        if (
+            next?.kind === 'hashtag' &&
+            typedAt.current !== `${textarea.selectionStart}:${textarea.value}`
+        ) {
+            close();
+
+            return;
+        }
 
         if (
             next?.kind === 'issue' &&
@@ -606,6 +621,20 @@ export function MentionTextarea({
                 ? hashtags.length > 0
                 : suggestions.length > 0 || query !== '');
 
+    // Where the word being completed ends, so accepting a suggestion replaces all of it, not only what is before the caret.
+    const wordEnd = (completing: Trigger): number => {
+        const caret = completing.start + 1 + completing.query.length;
+        const after = value.slice(caret);
+        const rest =
+            completing.kind === 'hashtag'
+                ? restOfHashtag(after)
+                : completing.kind === 'mention'
+                  ? (/^[A-Za-z0-9-]*/.exec(after)?.[0] ?? '')
+                  : '';
+
+        return caret + rest.length;
+    };
+
     const insert = (text: string, separator: string) => {
         const textarea = textareaRef.current;
 
@@ -624,8 +653,10 @@ export function MentionTextarea({
             return;
         }
 
-        const after = value.slice(caret);
-        const spacing = /^\s/u.test(after) ? '' : separator;
+        const after = value.slice(wordEnd(trigger));
+        // No space before punctuation that ends the sentence, as in "#node.js, and".
+        const isPunctuated = /^\p{P}/u.test(after);
+        const spacing = /^\s/u.test(after) || isPunctuated ? '' : separator;
         let next = `${value.slice(0, trigger.start)}${text}${spacing}${after}`;
 
         if (maxLength !== undefined && characterCount(next) > maxLength) {
@@ -641,7 +672,9 @@ export function MentionTextarea({
         const nextCaret =
             trigger.kind === 'issue'
                 ? textarea.selectionStart + next.length - value.length
-                : trigger.start + text.length + separator.length;
+                : trigger.start +
+                  text.length +
+                  (isPunctuated ? 0 : separator.length);
 
         onValueChange(next);
         close();
@@ -659,7 +692,11 @@ export function MentionTextarea({
 
     const selectEmoji = (emoji: EmojiSuggestion) => insert(emoji.emoji, '');
 
-    const selectHashtag = (hashtag: string) => insert(`#${hashtag}`, ' ');
+    const selectHashtag = (hashtag: string) =>
+        insert(
+            `#${trigger ? completedHashtag(value.slice(trigger.start + 1, wordEnd(trigger)), hashtag) : hashtag}`,
+            ' ',
+        );
 
     const autoLinkIssue = useEffectEvent(() => {
         if (trigger?.kind === 'issue' && trigger.complete && issue) {
@@ -777,6 +814,7 @@ export function MentionTextarea({
                     }
 
                     if (limited === target.value) {
+                        typedAt.current = `${target.selectionStart}:${target.value}`;
                         track(target);
 
                         return;

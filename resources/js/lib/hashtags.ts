@@ -38,6 +38,29 @@ export function hashtagsIn(text: string, startsText = false): Hashtag[] {
 }
 
 /**
+ * The rest of the hashtag after the caret, so accepting a suggestion replaces the whole hashtag rather than only what is
+ * before the caret. Trailing punctuation isn't part of a hashtag, so it stays.
+ */
+export function restOfHashtag(after: string): string {
+    // oxlint-disable-next-line no-misleading-character-class
+    return (
+        /^[^\s\u00AD\u2060\u200A-\u200D\u20E2]*/u.exec(after)?.[0] ?? ''
+    ).replace(/\p{P}+$/u, '');
+}
+
+/**
+ * The hashtag a suggestion completes what was written to. Suggestions are lowercase, so what was written keeps its case
+ * when the suggestion starts with it.
+ */
+export function completedHashtag(written: string, suggestion: string): string {
+    const lowered = written.toLowerCase();
+
+    return suggestion.startsWith(lowered)
+        ? written + suggestion.slice(lowered.length)
+        : suggestion;
+}
+
+/**
  * The hashtag being typed at the end of the prose before the caret, without its "#", so the composer can suggest
  * hashtags from the bare "#" on. Digits and punctuation alone, like "#123.", are left to issue references.
  */
