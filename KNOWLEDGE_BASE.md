@@ -205,7 +205,9 @@ Typing **@** in a composer opens developer suggestions. Use ↑/↓ to move, Ent
 
 Typing **#123** in a composer looks up that exact issue or pull request in the /dev/null repository, `dev-null-sh/dev-null.sh`. The matching title appears beneath the number; click it or use Enter or Tab to insert its GitHub URL. A space or punctuation after the number automatically inserts the match, without treating a pause midway through a longer number as completion. Missing numbers and failed lookups leave the text unchanged. Code, URL fragments, and references qualified with another repository are not expanded.
 
-Sources: [body renderer](resources/js/components/commit-body.tsx), [code blocks](resources/js/components/code-block.tsx), [mention suggestions](app/Http/Controllers/MentionSuggestionController.php), [mention parsing](app/Services/Mentions.php).
+A hex color such as `#ff8a4c` or `#fff` shows with a small swatch of the color, outside code. Colors written only with digits, such as `#000000`, stay plain text so they aren't confused with issue numbers.
+
+Sources: [body renderer](resources/js/components/commit-body.tsx), [colors](resources/js/lib/colors.ts), [code blocks](resources/js/components/code-block.tsx), [mention suggestions](app/Http/Controllers/MentionSuggestionController.php), [mention parsing](app/Services/Mentions.php).
 
 ### Draft previews
 
