@@ -358,10 +358,15 @@ export function MentionTextarea({
             suggestsHashtags,
         );
 
-        if (
-            next?.kind === 'hashtag' &&
-            typedAt.current !== `${textarea.selectionStart}:${textarea.value}`
-        ) {
+        // Once the caret leaves where typing left it, coming back isn't typing either.
+        const isTyping =
+            typedAt.current === `${textarea.selectionStart}:${textarea.value}`;
+
+        if (!isTyping) {
+            typedAt.current = null;
+        }
+
+        if (next?.kind === 'hashtag' && !isTyping) {
             close();
 
             return;
@@ -654,12 +659,15 @@ export function MentionTextarea({
         }
 
         const after = value.slice(wordEnd(trigger));
-        // No space before punctuation that ends the sentence, as in "#node.js, and".
-        const isPunctuated = /^\p{P}/u.test(after);
-        const spacing = /^\s/u.test(after) || isPunctuated ? '' : separator;
+        // No space before punctuation that ends a sentence, as in "#node.js, and", but one before anything else, like
+        // another "@mention". A space already there is stepped over instead.
+        const isSpaced = /^\s/u.test(after);
+        let spacing =
+            isSpaced || /^[.,;:!?)\]}"'”’…]/u.test(after) ? '' : separator;
         let next = `${value.slice(0, trigger.start)}${text}${spacing}${after}`;
 
         if (maxLength !== undefined && characterCount(next) > maxLength) {
+            spacing = '';
             next = `${value.slice(0, trigger.start)}${text}${after}`;
         }
 
@@ -674,7 +682,7 @@ export function MentionTextarea({
                 ? textarea.selectionStart + next.length - value.length
                 : trigger.start +
                   text.length +
-                  (isPunctuated ? 0 : separator.length);
+                  (spacing !== '' || isSpaced ? separator.length : 0);
 
         onValueChange(next);
         close();
@@ -821,8 +829,10 @@ export function MentionTextarea({
                     }
 
                     close();
+                    // The selection set next comes from typing too, so it may suggest what is being typed.
+                    const position = Math.min(caret, limited.length);
+                    typedAt.current = `${position}:${limited}`;
                     requestAnimationFrame(() => {
-                        const position = Math.min(caret, limited.length);
                         target.setSelectionRange(position, position);
                     });
                 }}

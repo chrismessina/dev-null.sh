@@ -39,12 +39,12 @@ export function hashtagsIn(text: string, startsText = false): Hashtag[] {
 
 /**
  * The rest of the hashtag after the caret, so accepting a suggestion replaces the whole hashtag rather than only what is
- * before the caret. Trailing punctuation isn't part of a hashtag, so it stays.
+ * before the caret. Trailing punctuation isn't part of a hashtag, so it stays, and neither is code after it.
  */
 export function restOfHashtag(after: string): string {
     // oxlint-disable-next-line no-misleading-character-class
     return (
-        /^[^\s\u00AD\u2060\u200A-\u200D\u20E2]*/u.exec(after)?.[0] ?? ''
+        /^[^\s`\u00AD\u2060\u200A-\u200D\u20E2]*/u.exec(after)?.[0] ?? ''
     ).replace(/\p{P}+$/u, '');
 }
 

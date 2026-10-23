@@ -4,14 +4,23 @@ import * as React from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, test, vi } from 'vite-plus/test';
 
+type FakeTextarea = ReturnType<typeof fakeTextarea>;
+
 let state: unknown[];
 let cursor = 0;
-let textareaElement: unknown = null;
+// Refs live across renders like React's, the first being the textarea's.
+let refs: { current: unknown }[];
+let refCursor = 0;
+let frames: (() => void)[];
 
 vi.doMock('react', () => ({
     ...React,
     useId: () => 'composer',
-    useRef: () => ({ current: textareaElement }),
+    useRef: (initial: unknown) => {
+        const index = refCursor++;
+        refs[index] ??= { current: initial };
+        return refs[index];
+    },
     useEffectEvent: (callback: unknown) => callback,
     useEffect: () => {},
     useState: (initial: unknown) => {
@@ -52,7 +61,7 @@ function elements(node: ReactNode): Element[] {
 }
 
 function fakeTextarea(value: string, caret = value.length) {
-    return {
+    const textarea = {
         value,
         selectionStart: caret,
         selectionEnd: caret,
@@ -60,18 +69,43 @@ function fakeTextarea(value: string, caret = value.length) {
         scrollLeft: 0,
         getBoundingClientRect: () => ({ top: 0, left: 0 }),
         focus: () => {},
-        setSelectionRange: () => {},
+        setSelectionRange: (start: number, end: number) => {
+            textarea.selectionStart = start;
+            textarea.selectionEnd = end;
+        },
     };
+
+    return textarea;
 }
+
+const taylor = {
+    user: {
+        id: 'taylorotwell',
+        username: 'taylorotwell',
+        name: 'Taylor',
+        lane: 1,
+    },
+    role: 'contributor',
+    read_through_id: 0,
+    is_followed: false,
+    suggests_mentions: true,
+} as never;
 
 function render(
     value: string,
     onValueChange: (value: string) => void = () => {},
+    props: Record<string, unknown> = {},
 ) {
     cursor = 0;
+    refCursor = 0;
 
     return elements(
-        MentionTextarea({ value, onValueChange, suggestsHashtags: true }),
+        MentionTextarea({
+            value,
+            onValueChange,
+            suggestsHashtags: true,
+            ...props,
+        }),
     );
 }
 
@@ -80,12 +114,23 @@ function textareaProps(value: string) {
         ?.props as Record<string, (event: unknown) => void>;
 }
 
+function flushFrames() {
+    for (const frame of frames.splice(0)) frame();
+}
+
 /**
- * Types the draft into the composer, ending with the caret at its end, and returns what it would suggest.
+ * Types into the composer, as an input event with the caret at its end, and returns what it would suggest.
  */
-function triggerAfterTyping(value: string) {
-    textareaProps(value).onChange({
-        currentTarget: fakeTextarea(value),
+function type(
+    textarea: FakeTextarea,
+    onValueChange: (value: string) => void = () => {},
+) {
+    (
+        render(textarea.value, onValueChange).find(
+            (element) => element.type === 'textarea',
+        )?.props.onChange as (event: unknown) => void
+    )({
+        currentTarget: textarea,
         nativeEvent: { isComposing: false },
     });
 
@@ -93,41 +138,97 @@ function triggerAfterTyping(value: string) {
 }
 
 /**
+ * The selection event a browser fires when the caret moves, whether by typing, a click or an arrow key.
+ */
+function select(textarea: FakeTextarea) {
+    textareaProps(textarea.value).onSelect({ currentTarget: textarea });
+
+    return state[0];
+}
+
+/**
+ * Types the draft into the composer, ending with the caret at its end, and returns what it would suggest.
+ */
+function triggerAfterTyping(value: string) {
+    return type(fakeTextarea(value));
+}
+
+/**
  * Moves the caret into the draft without typing, as a click or an arrow key does, and returns what it would suggest.
  */
 function triggerAfterMovingTo(value: string, caret: number) {
-    textareaProps(value).onSelect({
-        currentTarget: fakeTextarea(value, caret),
-    });
+    return select(fakeTextarea(value, caret));
+}
 
-    return state[0];
+/**
+ * Accepts the first suggestion for what is being typed, by clicking it, and returns the draft it makes and where the
+ * caret ends up.
+ */
+function acceptSuggestion(
+    value: string,
+    caret: number,
+    trigger: { kind: 'hashtag' | 'mention'; start: number },
+    hashtags: string[] = [],
+    props: Record<string, unknown> = {},
+): { value: string; caret: number } {
+    const textarea = fakeTextarea(value, caret);
+    const query = value.slice(trigger.start + 1, caret);
+    let next = value;
+
+    render(value);
+    refs[0].current = textarea;
+    state[0] = { ...trigger, query };
+    state[1] = { top: 0, left: 0 };
+    state[5] = { query: query.toLowerCase(), hashtags };
+    const option = render(value, (changed) => (next = changed), props).find(
+        (element) =>
+            element.props['data-test'] === `${trigger.kind}-suggestion`,
+    );
+
+    (option?.props.onClick as () => void)();
+    flushFrames();
+
+    return { value: next, caret: textarea.selectionStart };
 }
 
 /**
  * Accepts a hashtag suggestion for the hashtag being typed, by clicking it, and returns the draft it makes.
  */
 function accept(value: string, caret: number, hashtag: string): string {
-    textareaElement = fakeTextarea(value, caret);
-    const start = value.lastIndexOf('#', caret - 1);
-    const query = value.slice(start + 1, caret);
-    let next = value;
+    return acceptSuggestion(
+        value,
+        caret,
+        { kind: 'hashtag', start: value.lastIndexOf('#', caret - 1) },
+        [hashtag],
+    ).value;
+}
 
-    state[0] = { kind: 'hashtag', start, query };
-    state[1] = { top: 0, left: 0 };
-    state[5] = { query: query.toLowerCase(), hashtags: [hashtag] };
-    const option = render(value, (changed) => (next = changed)).find(
-        (element) => element.props['data-test'] === 'hashtag-suggestion',
+/**
+ * Accepts @taylorotwell for the mention being typed, by clicking it.
+ */
+function acceptTaylor(
+    value: string,
+    caret: number,
+    props: Record<string, unknown> = {},
+) {
+    return acceptSuggestion(
+        value,
+        caret,
+        { kind: 'mention', start: value.lastIndexOf('@', caret - 1) },
+        [],
+        { org: 'org', members: [taylor], ...props },
     );
-
-    (option?.props.onClick as () => void)();
-
-    return next;
 }
 
 beforeEach(() => {
     state = [];
-    textareaElement = null;
-    vi.stubGlobal('requestAnimationFrame', () => 0);
+    refs = [];
+    frames = [];
+    vi.stubGlobal('requestAnimationFrame', (frame: () => void) => {
+        frames.push(frame);
+
+        return 0;
+    });
     vi.stubGlobal('window', {
         innerWidth: 1024,
         innerHeight: 768,
@@ -219,36 +320,57 @@ test('suggests hashtags while typing, not when the caret moves into one', () => 
 });
 
 test('accepting a mention replaces the whole username, not only what is before the caret', () => {
-    const value = 'Thanks @tayotwell, again';
+    assert.equal(
+        acceptTaylor('Thanks @tayotwell, again', 10).value,
+        'Thanks @taylorotwell, again',
+    );
+});
 
-    textareaElement = fakeTextarea(value, 10);
-    state[0] = { kind: 'mention', start: 7, query: 'ta' };
-    state[1] = { top: 0, left: 0 };
-    let next = value;
-    cursor = 0;
-    const option = elements(
-        MentionTextarea({
-            value,
-            onValueChange: (changed: string) => (next = changed),
-            org: 'org',
-            members: [
-                {
-                    user: {
-                        id: 'taylorotwell',
-                        username: 'taylorotwell',
-                        name: 'Taylor',
-                        lane: 1,
-                    },
-                    role: 'contributor',
-                    read_through_id: 0,
-                    is_followed: false,
-                    suggests_mentions: true,
-                } as never,
-            ],
-        }),
-    ).find((element) => element.props['data-test'] === 'mention-suggestion');
+test('accepting a mention right before another one keeps them apart', () => {
+    assert.deepEqual(acceptTaylor('@ta@alice', 3), {
+        value: '@taylorotwell @alice',
+        caret: 14,
+    });
+});
 
-    (option?.props.onClick as () => void)();
+test('accepting a hashtag right before code keeps the code', () => {
+    assert.equal(accept('#no`keep`', 3, 'node.js'), '#node.js `keep`');
+});
 
-    assert.equal(next, 'Thanks @taylorotwell, again');
+test('accepting at the length limit puts the caret right after what was accepted', () => {
+    assert.deepEqual(acceptTaylor('@taylorotwell🚀', 3, { maxLength: 14 }), {
+        value: '@taylorotwell🚀',
+        caret: 13,
+    });
+});
+
+test('moving the caret away and back does not reopen hashtag suggestions', () => {
+    const textarea = fakeTextarea('#la');
+
+    assert.equal(type(textarea)?.constructor, Object);
+    assert.equal(select(textarea)?.constructor, Object);
+
+    textarea.setSelectionRange(2, 2);
+    assert.equal(select(textarea), null);
+
+    textarea.setSelectionRange(3, 3);
+    assert.equal(select(textarea), null);
+});
+
+test('suggests hashtags after typing an emoji shortcode before them', () => {
+    const textarea = fakeTextarea(':fire: #la');
+
+    let draft = textarea.value;
+
+    type(textarea, (changed) => (draft = changed));
+    // React puts the new draft into the textarea when it renders, after the input event.
+    textarea.value = draft;
+    flushFrames();
+
+    assert.equal(textarea.value, '🔥 #la');
+    assert.deepEqual(select(textarea), {
+        kind: 'hashtag',
+        start: 3,
+        query: 'la',
+    });
 });
