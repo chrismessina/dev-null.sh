@@ -19,6 +19,7 @@ This file documents the platform's features, stack, and stories. Feature entries
   - [Writing commits](#writing-commits)
   - [Translating commits](#translating-commits)
   - [Code, emoji, and mentions](#code-emoji-and-mentions)
+  - [Hashtags](#hashtags)
   - [Draft previews](#draft-previews)
   - [Stashed drafts](#stashed-drafts)
   - [Images and descriptions](#images-and-descriptions)
@@ -208,6 +209,16 @@ Typing **#123** in a composer looks up that exact issue or pull request in the /
 A hex color such as `#ff8a4c` or `#fff` shows with a small swatch of the color, outside code. Colors written only with digits, such as `#000000`, stay plain text so they aren't confused with issue numbers.
 
 Sources: [body renderer](resources/js/components/commit-body.tsx), [colors](resources/js/lib/colors.ts), [code blocks](resources/js/components/code-block.tsx), [mention suggestions](app/Http/Controllers/MentionSuggestionController.php), [mention parsing](app/Services/Mentions.php).
+
+### Hashtags
+
+Write `#` and a word to tag a commit, such as `#php` or `#laravel`. Hashtags follow Bluesky's rules. A hashtag starts at the beginning of a line or after a space and ends at the next space, and trailing punctuation is left out, so `#php.` tags `php`. Punctuation inside a hashtag stays, so `#node.js`, `#.net`, and `#c++` all work. A hashtag needs at least one character that isn't a digit or punctuation, so `#123` stays an issue reference, and a `# ` heading is never a hashtag. A link or mention never starts inside a hashtag, so `#asp.net` is a hashtag rather than a link, and `#@alice` and `#release:@alice` mention nobody. Hashtags in code don't count, case doesn't matter, and a hashtag can be up to 64 characters long.
+
+A hex color such as `#ff8a4c` or `#fff` is a color with a swatch, not a hashtag.
+
+Each hashtag links to a search for it. Typing **#** in the composer of a commit, reply, or quote suggests hashtags: the ones you use most come first, then the ones developers used in the last 30 days. Use ↑/↓ to move, Enter or Tab to select, and Esc to dismiss. Suggestions only come from commits you can see, and never from developers you muted or who are on the other side of a block.
+
+Sources: [hashtag parsing](app/Services/Hashtags.php), [hashtag rendering](resources/js/components/linkified-text.tsx), [hashtag suggestions](app/Queries/HashtagSuggestionsQuery.php).
 
 ### Draft previews
 
@@ -485,7 +496,7 @@ Sources: [issue command UI](resources/js/components/issue-command.tsx), [issue v
 Choose **Download JSON** in Settings → Profile to export your account data. The export includes:
 
 - profile details and preferences, including live-stream details, translation language, the last day you used /dev/null, and when you accepted the commit rules;
-- your commits and replies (including pending, rejected, and deleted entries still stored), their cached translations, polls, and your votes;
+- your commits and replies (including pending, rejected, and deleted entries still stored), their hashtags, cached translations, polls, and your votes;
 - stars, followers and people you follow, mutes, blocks, and dismissed **Not interested** suggestions;
 - messages you sent, including links to your voice notes, and notifications;
 - SSH key fingerprints, approved devices, and your timeout history;

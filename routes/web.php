@@ -45,6 +45,7 @@ use App\Http\Controllers\FailedJobController;
 use App\Http\Controllers\FailedJobRetryController;
 use App\Http\Controllers\FailedJobsController;
 use App\Http\Controllers\FeatureController;
+use App\Http\Controllers\HashtagSuggestionController;
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\IssueSuggestionController;
@@ -396,6 +397,11 @@ Route::middleware('auth')->group(function (): void {
     Route::get('search/mentions', [MentionSuggestionController::class, 'index'])
         ->middleware('throttle:people')
         ->name('mention-suggestion.index');
+
+    // Hashtag Suggestions...
+    Route::get('search/hashtags', [HashtagSuggestionController::class, 'index'])
+        ->middleware('throttle:people')
+        ->name('hashtag-suggestion.index');
 
     Route::get('search/issues', [IssueSuggestionController::class, 'index'])
         ->middleware('throttle:issue-suggestions')

@@ -82,8 +82,9 @@ it('erases what a deleted user wrote from the tombstones they leave', function (
     $mentioned = User::factory()->create();
     $commit = Commit::factory()->create();
     $reply = Commit::factory()->for($user)->for($commit, 'parent')->for(LinkPreview::factory())->create([
-        'body' => "@{$mentioned->username} have a look at https://example.com",
+        'body' => "@{$mentioned->username} have a look at https://example.com #php",
         'mentions' => [$mentioned->username => $mentioned->id],
+        'hashtags' => ['php'],
         'embedding' => embeddingVector(0),
     ]);
     $deletedReply = Commit::factory()->for($user)->for($commit, 'parent')->create();
@@ -98,6 +99,7 @@ it('erases what a deleted user wrote from the tombstones they leave', function (
     expect($tombstones->count())->toBe(2)
         ->and($tombstones->pluck('body')->all())->toBe(['', ''])
         ->and($tombstones->pluck('mentions')->all())->toBe([null, null])
+        ->and($tombstones->pluck('hashtags')->all())->toBe([null, null])
         ->and($tombstones->pluck('embedding')->all())->toBe([null, null])
         ->and($tombstones->pluck('link_preview_id')->all())->toBe([null, null]);
 });

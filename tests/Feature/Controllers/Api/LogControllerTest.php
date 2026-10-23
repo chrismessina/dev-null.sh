@@ -75,6 +75,7 @@ it('lists the latest commits of everyone, newest first', function (): void {
         'body_segments' => [['type' => 'text', 'text' => 'It was DNS.']],
         'preview_segments' => null,
         'mentions' => [],
+        'hashtags' => [],
         'status' => 'approved',
         'is_pinned' => false,
         'starred' => false,
@@ -102,6 +103,14 @@ it('sends the excerpt the web shows of a long commit in a list', function (): vo
         ->assertJsonPath('data.0.preview_segments', resolve(CommitBodies::class)->segments($long->body)['preview_segments']);
 
     expect($response->json('data.0.preview_segments'))->not->toBeNull();
+});
+
+it('sends where each hashtag is, so a client can link it', function (): void {
+    Commit::factory()->create(['body' => 'Café 🎉 with #PHP, `#php` and #ff8a4c.']);
+
+    signedApiRequest($this->keyPair, 'GET', route('api-log.show', 'latest'))
+        ->assertOk()
+        ->assertJsonPath('data.0.hashtags', [['tag' => 'PHP', 'offset' => 12, 'length' => 4]]);
 });
 
 it('shows what the web shows on a commit', function (): void {

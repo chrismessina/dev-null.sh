@@ -1481,6 +1481,7 @@ function ReplyComposer({
             <div className="grid">
                 <MentionTextarea
                     ref={textareaRef}
+                    suggestsHashtags
                     reply={parent.id}
                     id={`reply-${parent.id}`}
                     name="body"

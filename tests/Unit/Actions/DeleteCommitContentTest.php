@@ -73,7 +73,7 @@ it('keeps the images of a commit deleted again within its new undo window', func
 });
 
 it('erases the content once the undo window has closed', function (): void {
-    $commit = Commit::factory()->create(['body' => 'Hello @taylor', 'mentions' => ['taylor'], 'link_preview_id' => LinkPreview::factory()]);
+    $commit = Commit::factory()->create(['body' => 'Hello @taylor #php', 'mentions' => ['taylor'], 'hashtags' => ['php'], 'link_preview_id' => LinkPreview::factory()]);
     $poll = Poll::factory()->withOptions('Yes', 'No')->create(['commit_id' => $commit->id]);
     resolve(DeleteCommit::class)->handle($commit);
     $this->travel(30)->seconds();
@@ -84,6 +84,7 @@ it('erases the content once the undo window has closed', function (): void {
     expect($commit)
         ->body->toBe('')
         ->mentions->toBeNull()
+        ->hashtags->toBeNull()
         ->link_preview_id->toBeNull()
         ->user_id->not->toBeNull();
     $this->assertModelMissing($poll);
@@ -105,7 +106,7 @@ it('erases the previews of links to the commit, which hold its body', function (
 });
 
 it('keeps the content while the commit can still be restored', function (): void {
-    $commit = Commit::factory()->create(['body' => 'Hello @taylor', 'mentions' => ['taylor']]);
+    $commit = Commit::factory()->create(['body' => 'Hello @taylor #php', 'mentions' => ['taylor'], 'hashtags' => ['php']]);
     $poll = Poll::factory()->create(['commit_id' => $commit->id]);
     resolve(DeleteCommit::class)->handle($commit);
     $this->travel(29)->seconds();
@@ -113,8 +114,9 @@ it('keeps the content while the commit can still be restored', function (): void
     resolve(DeleteCommitContent::class)->handle($commit);
 
     expect(Commit::withTrashed()->findOrFail($commit->id))
-        ->body->toBe('Hello @taylor')
-        ->mentions->toBe(['taylor']);
+        ->body->toBe('Hello @taylor #php')
+        ->mentions->toBe(['taylor'])
+        ->hashtags->toBe(['php']);
     $this->assertModelExists($poll);
 });
 

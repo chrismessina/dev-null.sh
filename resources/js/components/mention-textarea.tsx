@@ -2,6 +2,7 @@ import { usePage } from '@inertiajs/react';
 import type { ComponentProps, KeyboardEvent, Ref, SyntheticEvent } from 'react';
 import { useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import HashtagSuggestionController from '@/actions/App/Http/Controllers/HashtagSuggestionController';
 import { index as issueSuggestions } from '@/actions/App/Http/Controllers/IssueSuggestionController';
 import MentionSuggestionController from '@/actions/App/Http/Controllers/MentionSuggestionController';
 import { Spinner } from '@/components/ui/spinner';
@@ -9,14 +10,16 @@ import { UserAvatar } from '@/components/user-avatar';
 import { typedProse } from '@/lib/code';
 import type { EmojiSuggestion } from '@/lib/emoji';
 import { emojifyInput, searchEmoji } from '@/lib/emoji';
+import { hashtagBeforeCaret } from '@/lib/hashtags';
 import { issueReferenceBeforeCaret } from '@/lib/issue-reference';
+import { wordSoFar } from '@/lib/mentions';
 import { suggestionPosition } from '@/lib/suggestion-position';
 import { toastWhenThrottled } from '@/lib/throttle';
 import { characterCount, cn, laneColor, limitCharacters } from '@/lib/utils';
 import type { OrgMember, User } from '@/types';
 
 type Trigger = {
-    kind: 'mention' | 'emoji' | 'issue';
+    kind: 'mention' | 'emoji' | 'hashtag' | 'issue';
     start: number;
     query: string;
     complete?: boolean;
@@ -33,6 +36,11 @@ type Suggestions = {
     users: User[];
 };
 
+type HashtagSuggestions = {
+    query: string;
+    hashtags: string[];
+};
+
 type Position = ReturnType<typeof suggestionPosition>;
 
 const debounce = 120;
@@ -43,8 +51,10 @@ export function clearMentionSuggestionsCache(): void {
 }
 
 // The "@handle" being typed right before the caret. Keep the rules in sync with app/Services/Mentions.php.
-const mentionBeforeCaretPattern =
-    /(?:^|[^\p{L}\p{N}_./@-])@([A-Za-z0-9][A-Za-z0-9-]{0,38}|)$/u;
+const mentionBeforeCaretPattern = new RegExp(
+    String.raw`(?:^|[^\p{L}\p{N}_./@-])(?<!${wordSoFar})@([A-Za-z0-9][A-Za-z0-9-]{0,38}|)$`,
+    'u',
+);
 
 // The ":shortcode" being typed in prose right before the caret, from two characters on so times like 10:30 stay quiet.
 const emojiBeforeCaretPattern =
@@ -81,6 +91,7 @@ function triggerAt(
     textarea: HTMLTextAreaElement,
     suggestsMentions: boolean,
     suggestsIssues: boolean,
+    suggestsHashtags: boolean,
 ): Trigger | null {
     if (textarea.selectionStart !== textarea.selectionEnd) {
         return null;
@@ -109,6 +120,22 @@ function triggerAt(
             kind: 'emoji',
             start: caret - emoji[1].length,
             query: emoji[2],
+        };
+    }
+
+    // Prose before any code starts the draft, so a ">" there starts a quoted line, as the server reads it.
+    const prose = typedProse(before);
+    const hashtag = suggestsHashtags
+        ? hashtagBeforeCaret(
+              prose.length === 1 ? `\n${prose[0]}` : (prose.at(-1) ?? ''),
+          )
+        : null;
+
+    if (hashtag !== null) {
+        return {
+            kind: 'hashtag',
+            start: caret - hashtag.length - 1,
+            query: hashtag,
         };
     }
 
@@ -245,7 +272,8 @@ function Highlighted({ text, query }: { text: string; query: string }) {
 /**
  * A textarea that suggests developers to mention as soon as "@" is typed, right under the "@", unless it doesn't
  * suggest mentions, suggests emoji for the ":shortcode" being typed, and turns emoji shortcodes into emoji as they
- * are typed. Within an org, it only suggests the org's members.
+ * are typed. Within an org, it only suggests the org's members. When it suggests hashtags, it suggests the user's own
+ * and the ones people use lately as soon as "#" is typed.
  */
 export function MentionTextarea({
     ref,
@@ -257,6 +285,7 @@ export function MentionTextarea({
     maxLength,
     suggestsMentions = true,
     suggestsIssues = suggestsMentions,
+    suggestsHashtags = false,
     org,
     members,
     reply,
@@ -268,6 +297,7 @@ export function MentionTextarea({
     onValueChange: (value: string) => void;
     suggestsMentions?: boolean;
     suggestsIssues?: boolean;
+    suggestsHashtags?: boolean;
     org?: string;
     members?: OrgMember[];
     reply?: string;
@@ -285,6 +315,8 @@ export function MentionTextarea({
     const [issueResult, setIssueResult] = useState<IssueSuggestion | null>(
         null,
     );
+    const [hashtagResults, setHashtagResults] =
+        useState<HashtagSuggestions | null>(null);
     const issueQuery = trigger?.kind === 'issue' ? trigger.query : null;
     const issue =
         issueQuery === String(issueResult?.number) ? issueResult : null;
@@ -309,10 +341,16 @@ export function MentionTextarea({
     const close = () => {
         setTrigger(null);
         setPosition(null);
+        setHashtagResults(null);
     };
 
     const track = (textarea: HTMLTextAreaElement) => {
-        const next = triggerAt(textarea, suggestsMentions, suggestsIssues);
+        const next = triggerAt(
+            textarea,
+            suggestsMentions,
+            suggestsIssues,
+            suggestsHashtags,
+        );
 
         if (
             next?.kind === 'issue' &&
@@ -367,6 +405,60 @@ export function MentionTextarea({
             controller.abort();
         };
     }, [key, query, org, reply, quote, members]);
+
+    const hashtagQuery =
+        trigger?.kind === 'hashtag' ? trigger.query.toLowerCase() : null;
+
+    useEffect(() => {
+        if (hashtagQuery === null) {
+            return;
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(
+            () =>
+                void fetch(
+                    HashtagSuggestionController.index({
+                        query: { q: hashtagQuery },
+                    }).url,
+                    {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        signal: controller.signal,
+                    },
+                )
+                    .then(async (response) => {
+                        if (!response.ok) {
+                            toastWhenThrottled(response);
+                            setHashtagResults(null);
+
+                            return;
+                        }
+
+                        const data = (await response.json()) as {
+                            hashtags: string[];
+                        };
+
+                        setHashtagResults({
+                            query: hashtagQuery,
+                            hashtags: data.hashtags,
+                        });
+                    })
+                    .catch(() => {
+                        if (!controller.signal.aborted) {
+                            setHashtagResults(null);
+                        }
+                    }),
+            hashtagQuery === '' ? 0 : debounce,
+        );
+
+        return () => {
+            clearTimeout(timeout);
+            controller.abort();
+        };
+    }, [hashtagQuery]);
 
     useEffect(() => {
         if (issueQuery === null) {
@@ -482,6 +574,16 @@ export function MentionTextarea({
     const emojiQuery =
         trigger?.kind === 'emoji' ? trigger.query.toLowerCase() : '';
     const emojis = emojiQuery === '' ? [] : searchEmoji(emojiQuery);
+    // Nothing is cached, so blocking or muting someone shows at once. While the next suggestions load, the ones already
+    // shown that still match stay, so the list doesn't flash, until the list closes or loading them fails.
+    const hashtags =
+        hashtagQuery === null
+            ? []
+            : hashtagResults?.query === hashtagQuery
+              ? hashtagResults.hashtags
+              : (hashtagResults?.hashtags ?? []).filter((hashtag) =>
+                    hashtag.startsWith(hashtagQuery),
+                );
     const optionCount =
         trigger?.kind === 'issue'
             ? issue
@@ -489,7 +591,9 @@ export function MentionTextarea({
                 : 0
             : trigger?.kind === 'emoji'
               ? emojis.length
-              : suggestions.length;
+              : trigger?.kind === 'hashtag'
+                ? hashtags.length
+                : suggestions.length;
     const selectedIndex = Math.min(activeIndex, Math.max(0, optionCount - 1));
     const isOpen =
         trigger !== null &&
@@ -498,7 +602,9 @@ export function MentionTextarea({
             ? issue !== null && !trigger.complete
             : trigger.kind === 'emoji'
               ? emojis.length > 0
-              : suggestions.length > 0 || query !== '');
+              : trigger.kind === 'hashtag'
+                ? hashtags.length > 0
+                : suggestions.length > 0 || query !== '');
 
     const insert = (text: string, separator: string) => {
         const textarea = textareaRef.current;
@@ -553,6 +659,8 @@ export function MentionTextarea({
 
     const selectEmoji = (emoji: EmojiSuggestion) => insert(emoji.emoji, '');
 
+    const selectHashtag = (hashtag: string) => insert(`#${hashtag}`, ' ');
+
     const autoLinkIssue = useEffectEvent(() => {
         if (trigger?.kind === 'issue' && trigger.complete && issue) {
             insert(issue.url, '');
@@ -594,6 +702,8 @@ export function MentionTextarea({
                     insert(issue.url, ' ');
                 } else if (trigger?.kind === 'emoji') {
                     selectEmoji(emojis[selectedIndex]);
+                } else if (trigger?.kind === 'hashtag') {
+                    selectHashtag(hashtags[selectedIndex]);
                 } else {
                     select(suggestions[selectedIndex]);
                 }
@@ -625,8 +735,10 @@ export function MentionTextarea({
           : trigger?.kind === 'emoji'
             ? emojis[selectedIndex] &&
               `${id}-emoji-${emojis[selectedIndex].name}`
-            : suggestions[selectedIndex] &&
-              `${id}-mention-${suggestions[selectedIndex].id}`;
+            : trigger?.kind === 'hashtag'
+              ? `${id}-hashtag-${selectedIndex}`
+              : suggestions[selectedIndex] &&
+                `${id}-mention-${suggestions[selectedIndex].id}`;
 
     const isSearching = current?.key !== key;
     const listId =
@@ -634,7 +746,9 @@ export function MentionTextarea({
             ? `${id}-issues`
             : trigger?.kind === 'emoji'
               ? `${id}-emojis`
-              : `${id}-mentions`;
+              : trigger?.kind === 'hashtag'
+                ? `${id}-hashtags`
+                : `${id}-mentions`;
 
     return (
         <>
@@ -766,6 +880,58 @@ export function MentionTextarea({
                                                 query={emojiQuery}
                                             />
                                             :
+                                        </span>
+                                        <kbd
+                                            aria-hidden
+                                            className={cn(
+                                                'hidden shrink-0 font-mono text-xs text-muted-foreground opacity-0 sm:block',
+                                                {
+                                                    'opacity-100':
+                                                        index === selectedIndex,
+                                                },
+                                            )}
+                                        >
+                                            ↵
+                                        </kbd>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : trigger?.kind === 'hashtag' ? (
+                            <ul
+                                ref={listRef}
+                                id={listId}
+                                role="listbox"
+                                aria-label="Add a hashtag"
+                                className="min-h-0 overflow-y-auto overscroll-contain p-1.5"
+                            >
+                                {hashtags.map((hashtag, index) => (
+                                    <li
+                                        key={hashtag}
+                                        id={`${id}-hashtag-${index}`}
+                                        role="option"
+                                        aria-selected={index === selectedIndex}
+                                        onMouseMove={() =>
+                                            setActiveIndex(index)
+                                        }
+                                        onClick={() => selectHashtag(hashtag)}
+                                        className={cn(
+                                            'flex cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-1.5',
+                                            {
+                                                'bg-accent':
+                                                    index === selectedIndex,
+                                            },
+                                        )}
+                                        data-test="hashtag-suggestion"
+                                    >
+                                        <span
+                                            className="min-w-0 flex-1 truncate font-mono text-[13px] text-muted-foreground"
+                                            title={`#${hashtag}`}
+                                        >
+                                            #
+                                            <Highlighted
+                                                text={hashtag}
+                                                query={hashtagQuery ?? ''}
+                                            />
                                         </span>
                                         <kbd
                                             aria-hidden

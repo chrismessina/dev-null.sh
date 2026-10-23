@@ -6,7 +6,7 @@ namespace App\Services;
 
 final readonly class Mentions
 {
-    private const string Pattern = '/(?<![\p{L}\p{N}_.\/@-])@([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})(?![A-Za-z0-9_@\/-]|\.[A-Za-z0-9])/u';
+    private const string Pattern = '/(?<![\p{L}\p{N}_.\/@-])(?<!'.Hashtags::WordSoFar.')@([A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38})(?![A-Za-z0-9_@\/-]|\.[A-Za-z0-9])/u';
 
     public function __construct(private CodeSpans $codeSpans)
     {
@@ -15,10 +15,10 @@ final readonly class Mentions
 
     /**
      * Finds the GitHub usernames mentioned as "@username" in the text, lowercased and once each, in order. A mention
-     * can't follow a letter, digit, "_", ".", "/", "@" or "-" (so emails are not mentions), and can't run into a path
-     * or a domain (so "@inertiajs/react" and "@vue.js" are not mentions either), and a mention in code doesn't count
-     * (so "@Override" or "@param" never notify anyone). Keep the rules in sync with
-     * resources/js/lib/mentions.ts.
+     * can't follow a letter, digit, "_", ".", "/", "@" or "-" (so emails are not mentions), or start inside a word that
+     * starts with "#" (so "#@alice" and "#release:@alice" are hashtags), and can't run into a path or a domain (so
+     * "@inertiajs/react" and "@vue.js" are not mentions either), and a mention in code doesn't count (so "@Override" or
+     * "@param" never notify anyone). Keep the rules in sync with resources/js/lib/mentions.ts.
      *
      * @return list<string>
      */

@@ -226,6 +226,7 @@ function QuoteComposer({
                             </label>
                             <MentionTextarea
                                 ref={textareaRef}
+                                suggestsHashtags
                                 id={id}
                                 quote={commit.id}
                                 name="body"

@@ -25,8 +25,10 @@ it('previews a draft the way the commit it becomes is shown', function (string $
             'body_segments' => $commit['body_segments'],
             'preview_segments' => $commit['preview_segments'],
             'mentions' => $commit['mentions'],
+            'hashtags' => $commit['hashtags'],
         ]]);
 })->with([
+    'hashtags' => 'Shipping #Laravel, `#php` and #:rocket:',
     'code, mentions and emoji' => "  shipped :rocket: with @nunomaduro\n```php\n\$name = 'devnull';\n```\nrun `composer test` :fire:  ",
     'runs of blank lines' => "Shipped it.\n\n\n\nFinally.",
     'too long to show whole in a list' => implode("\n", array_fill(0, 12, 'One more line of the changelog.')),

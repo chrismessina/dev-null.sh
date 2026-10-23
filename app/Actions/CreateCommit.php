@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Queries\MentionedUsersQuery;
 use App\Queries\TomQuery;
 use App\Services\EmojiShortcodes;
+use App\Services\Hashtags;
 use App\Services\TheAlgorithm;
 use App\Services\Urls;
 use Illuminate\Http\UploadedFile;
@@ -35,6 +36,7 @@ final readonly class CreateCommit
         private EmojiShortcodes $emojiShortcodes,
         private Urls $urls,
         private MentionedUsersQuery $mentionedUsers,
+        private Hashtags $hashtags,
         private TomQuery $tomQuery,
     ) {
         //
@@ -48,20 +50,23 @@ final readonly class CreateCommit
      */
     public function handle(User $user, string $body, ?Commit $parent = null, ?Commit $quotedCommit = null, array $images = [], array $imageDescriptions = [], bool|string $linkPreview = true, ?NewPoll $poll = null): Commit
     {
+        // Everything is found in the body as kept, so an emoji shortcode can't make a mention or a link part of a hashtag.
+        $kept = $this->emojiShortcodes->replace($body);
         $url = match ($linkPreview) {
-            true => $this->urls->first($body),
+            true => $this->urls->first($kept),
             false => null,
             default => $linkPreview,
         };
 
-        return DB::transaction(function () use ($user, $body, $parent, $quotedCommit, $images, $imageDescriptions, $url, $poll): Commit {
+        return DB::transaction(function () use ($user, $kept, $parent, $quotedCommit, $images, $imageDescriptions, $url, $poll): Commit {
             $linkPreview = $this->linkPreviewFor($url);
             $createdAt = now();
             $hasGoodReputation = $user->hasGoodReputation();
 
             $commit = $user->commits()->create([
-                'body' => $this->emojiShortcodes->replace($body),
-                'mentions' => $this->mentionedUsers->get($body),
+                'body' => $kept,
+                'mentions' => $this->mentionedUsers->get($kept),
+                'hashtags' => $this->hashtags->tags($kept),
                 'parent_id' => $parent?->id,
                 'root_id' => $parent?->threadRootId(),
                 'status' => $user->isAdmin() || $hasGoodReputation ? CommitStatus::Approved : CommitStatus::Pending,

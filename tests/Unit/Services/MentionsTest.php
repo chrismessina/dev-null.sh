@@ -30,6 +30,7 @@ it('ignores what only looks like a mention', function (string $text): void {
     expect($mentions->usernames($text))->toBe([]);
 })->with([
     'email' => ['Mail me at nuno@laravel.com'],
+    'hashtag' => ['Learning #@nuno'],
     'scoped package' => ['npm i @inertiajs/react'],
     'domain' => ['Try @vue.js'],
     'path' => ['See medium.com/@nuno'],
@@ -87,3 +88,24 @@ it('skips mentions in inline code and code blocks when finding where they are', 
         ['username' => 'jess-archer', 'offset' => 85, 'length' => 12],
     ]);
 });
+
+it('finds no mentions inside a hashtag', function (string $text): void {
+    $mentions = resolve(Mentions::class);
+
+    expect($mentions->usernames($text))->toBe(['nuno'])
+        ->and($mentions->positions($text))->toBe([
+            ['username' => 'nuno', 'offset' => mb_strlen($text) - 5, 'length' => 5],
+        ]);
+})->with([
+    'after punctuation in the tag' => ['Shipping #release:@alice today, thanks @nuno'],
+    'in a tag starting a quoted line' => [">#release:@alice\nthanks @nuno"],
+    'in a tag after emoji' => ['🚀 #ship:@alice 🚀 @nuno'],
+    'in a tag that is too long until its emoji shortcode is replaced' => ['#'.str_repeat('a', 55).':rocket:@alice thanks @nuno'],
+]);
+
+it('finds mentions after a hash that cannot start a hashtag', function (string $text): void {
+    expect(resolve(Mentions::class)->usernames($text))->toBe(['alice']);
+})->with([
+    'after a word' => ['C#:@alice'],
+    'after code ending in a hashtag' => ['Run `#tag`:@alice'],
+]);

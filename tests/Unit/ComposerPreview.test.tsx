@@ -306,6 +306,10 @@ for (const [body, expected] of [
     ['Run `@alice` in the shell', false],
     ['```java\n@Override\n```', false],
     ['Install @inertiajs/react and @vue.js', false],
+    ['Shipping #release:@alice', false],
+    ['>#release:@alice', false],
+    ['```\nx\n```\n>#release:@alice', false],
+    ['`x`>#release:@alice', false],
 ] as const) {
     test(`${expected ? 'finds' : 'finds no'} mention in "${body}"`, () => {
         assert.equal(hasMention(bodySegments(body)), expected);

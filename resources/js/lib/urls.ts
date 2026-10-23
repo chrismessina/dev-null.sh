@@ -8,10 +8,14 @@ const topLevelDomains = [
     .join(' ')
     .split(' ');
 
+// A word starting with "#", as in mentions.ts, which this module can't import because the node tests load it.
+const wordSoFar = String.raw`(?<![^\s>])[#\uFF03][^\x60\s\u00AD\u2060\u200A-\u200D\u20E2]{0,254}`;
+
 // Schemes cannot follow Unicode letters, numbers, marks or connector punctuation. Avoid JS/PHP differences in \b.
+// Neither starts inside a word that starts with "#", so "#asp.net" and "#docs:example.com" are hashtags.
 export const urlPattern = new RegExp(
-    String.raw`(?<![\p{L}\p{N}\p{M}\p{Pc}])[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\s<>]+` +
-        String.raw`|(?<![\p{L}\p{N}_.\/@-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+` +
+    String.raw`(?<![\p{L}\p{N}\p{M}\p{Pc}])(?<!${wordSoFar})[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\s<>]+` +
+        String.raw`|(?<![\p{L}\p{N}_.\/@-])(?<!${wordSoFar})(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+` +
         String.raw`(?:${[...topLevelDomains, ...topLevelDomains.map((domain) => domain.toUpperCase())].join('|')})` +
         String.raw`(?![\p{L}\p{N}_(-]|\.[A-Za-z0-9])(?:[\/?#][^\s<>]*)?`,
     'gu',

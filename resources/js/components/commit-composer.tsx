@@ -244,6 +244,7 @@ function CommitComposerBody({
                         )}
                         <MentionTextarea
                             ref={textareaRef}
+                            suggestsHashtags
                             id={id}
                             name="body"
                             rows={1}

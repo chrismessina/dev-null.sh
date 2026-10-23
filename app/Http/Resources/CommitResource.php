@@ -10,6 +10,7 @@ use App\Models\CommitImage;
 use App\Models\Poll;
 use App\Models\User;
 use App\Services\CommitBodies;
+use App\Services\Hashtags;
 use App\Services\Mentions;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -20,7 +21,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  *
  * A signed request gets the commit as the web shows it to that user instead: parent_id is the parent the commit
  * replies to, whoever may see it, and on top come the body split into prose, inline code and highlighted code
- * blocks, where it mentions someone, its status, whether the author pinned it, whether the user starred,
+ * blocks, where it mentions someone and where its hashtags are, its status, whether the author pinned it, whether the user starred,
  * and how many pastéis it was given, which the app only shows in pastéis mode, as the web does. Like the web's cards,
  * it also has preview_segments, the excerpt a list shows of a long commit, the poll, with what the user may see of
  * its votes, and the commit it quotes, or null once the user may no longer see that one, while quoted_commit_id still
@@ -76,6 +77,7 @@ final class CommitResource extends JsonResource
             ...$commit,
             ...resolve(CommitBodies::class)->segments($this->body),
             'mentions' => resolve(Mentions::class)->positions($this->body),
+            'hashtags' => resolve(Hashtags::class)->positions($this->body),
             'status' => $this->status,
             'is_pinned' => $this->user?->pinned_commit_id === $this->id,
             'starred' => $this->whenHas('starred'),

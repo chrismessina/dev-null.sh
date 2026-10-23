@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import CommitController from '@/actions/App/Http/Controllers/CommitController';
+import SearchController from '@/actions/App/Http/Controllers/SearchController';
 import AppLogoIcon from '@/components/app-logo-icon';
 import AppWordmark from '@/components/app-wordmark';
 import { GitHubIcon } from '@/components/github-icon';
@@ -8,6 +9,8 @@ import { UserPreview } from '@/components/user-preview';
 import { typedProse, withoutCode } from '@/lib/code';
 import type { Color } from '@/lib/colors';
 import { colorsIn } from '@/lib/colors';
+import type { Hashtag } from '@/lib/hashtags';
+import { hashtagsIn } from '@/lib/hashtags';
 import { mentionPattern } from '@/lib/mentions';
 import {
     hrefFor,
@@ -330,10 +333,82 @@ function withColors(
     return parts;
 }
 
+/**
+ * The hashtags found in the whole text that fall in this slice of it, as links to a search for them.
+ */
+function withHashtags(
+    text: string,
+    offset: number,
+    hashtags: Hashtag[],
+    colors: Color[],
+    pasteisMode: boolean,
+    isStatic: boolean,
+): ReactNode[] {
+    const parts: ReactNode[] = [];
+    let position = 0;
+
+    for (const hashtag of hashtags) {
+        const index = hashtag.index - offset;
+
+        if (index < position || index + hashtag.length > text.length) {
+            continue;
+        }
+
+        const written = text.slice(index, index + hashtag.length);
+
+        parts.push(
+            ...withColors(
+                text.slice(position, index),
+                offset + position,
+                colors,
+                pasteisMode,
+            ),
+            isStatic ? (
+                written
+            ) : (
+                <Link
+                    key={`hashtag-${hashtag.index}`}
+                    href={SearchController.index({
+                        query: { q: `#${hashtag.tag}` },
+                    })}
+                    className="font-medium text-primary hover:underline"
+                    data-test="hashtag"
+                >
+                    {written}
+                </Link>
+            ),
+        );
+
+        position = index + hashtag.length;
+    }
+
+    parts.push(
+        ...withColors(
+            text.slice(position),
+            offset + position,
+            colors,
+            pasteisMode,
+        ),
+    );
+
+    return parts;
+}
+
+/**
+ * Whether a match starting at this index of the whole text falls inside a hashtag, which keeps it whole.
+ */
+function isInHashtag(hashtags: Hashtag[], index: number): boolean {
+    return hashtags.some(
+        (hashtag) =>
+            index > hashtag.index && index < hashtag.index + hashtag.length,
+    );
+}
+
 function withMentions(
     text: string,
     offset: number,
     mentions: Commit['mentions'],
+    hashtags: Hashtag[],
     colors: Color[],
     pasteisMode: boolean,
     isStatic: boolean,
@@ -342,6 +417,10 @@ function withMentions(
     let position = 0;
 
     for (const match of text.matchAll(mentionPattern)) {
+        if (isInHashtag(hashtags, offset + match.index)) {
+            continue;
+        }
+
         const username = match[1].toLowerCase();
         const userId =
             mentions && Object.hasOwn(mentions, username)
@@ -349,11 +428,13 @@ function withMentions(
                 : null;
 
         parts.push(
-            ...withColors(
+            ...withHashtags(
                 text.slice(position, match.index),
                 offset + position,
+                hashtags,
                 colors,
                 pasteisMode,
+                isStatic,
             ),
             isStatic || !userId ? (
                 match[0]
@@ -378,11 +459,13 @@ function withMentions(
     }
 
     parts.push(
-        ...withColors(
+        ...withHashtags(
             text.slice(position),
             offset + position,
+            hashtags,
             colors,
             pasteisMode,
+            isStatic,
         ),
     );
 
@@ -404,15 +487,17 @@ export function LinkifiedText({
     startsText?: boolean;
 }) {
     const parts: ReactNode[] = [];
-    // Colors are found in the prose only, for callers that pass a whole body, code included.
-    const colors = colorsIn(withoutCode(text), startsText);
+    // Hashtags and colors are found in the prose only, for callers that pass a whole body, code included.
+    const prose = withoutCode(text);
+    const hashtags = hashtagsIn(prose, startsText);
+    const colors = colorsIn(prose, startsText);
     let position = 0;
 
     for (const match of text.matchAll(urlPattern)) {
         const linkText = withoutTrailingPunctuation(match[0]);
         const href = hrefFor(linkText);
 
-        if (href === null) {
+        if (href === null || isInHashtag(hashtags, match.index)) {
             continue;
         }
 
@@ -424,6 +509,7 @@ export function LinkifiedText({
                 text.slice(position, match.index),
                 position,
                 mentions,
+                hashtags,
                 colors,
                 pasteisMode,
                 isStatic,
@@ -470,6 +556,7 @@ export function LinkifiedText({
             text.slice(position),
             position,
             mentions,
+            hashtags,
             colors,
             pasteisMode,
             isStatic,

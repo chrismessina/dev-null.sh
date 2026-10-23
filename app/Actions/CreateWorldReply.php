@@ -7,6 +7,7 @@ namespace App\Actions;
 use App\Enums\CommitStatus;
 use App\Models\Commit;
 use App\Models\User;
+use App\Services\Hashtags;
 use App\Services\HelloWorld;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,7 @@ final readonly class CreateWorldReply
     public function __construct(
         private HelloWorld $helloWorld,
         private CreateReplyNotifications $createReplyNotifications,
+        private Hashtags $hashtags,
     ) {
         //
     }
@@ -57,8 +59,11 @@ final readonly class CreateWorldReply
                 return;
             }
 
+            $body = "Hello, {$author->name}.";
+
             $reply = $world->commits()->create([
-                'body' => "Hello, {$author->name}.",
+                'body' => $body,
+                'hashtags' => $this->hashtags->tags($body),
                 'parent_id' => $commit->id,
                 'root_id' => $commit->threadRootId(),
                 'status' => CommitStatus::Approved,

@@ -556,3 +556,138 @@ test('shows a swatch for a color that starts a quoted line at the start of a who
     assert.equal(colors('>>#fff'), 0);
     assert.equal(colors('`x`>#fff'), 0);
 });
+
+test('links hashtags to a search for them, keeping their case and leaving trailing punctuation out', () => {
+    const text =
+        'Shipping #Laravel and #node.js, not C# or #123. Thanks @original #php!';
+    const html = renderToStaticMarkup(
+        <LinkifiedText
+            text={text}
+            mentions={{ original: '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b' }}
+        />,
+    );
+
+    assert.equal(html.match(/data-test="hashtag"/g)?.length, 3);
+    assert.ok(html.includes('href="/search?q=%23Laravel"'));
+    assert.ok(html.includes('>#Laravel</a>'));
+    assert.ok(html.includes('>#node.js</a>,'));
+    assert.ok(html.includes('>#php</a>!'));
+    assert.equal(html.replace(/<[^>]*>/g, ''), text);
+});
+
+test('leaves hashtags as plain text where nothing may be linked', () => {
+    const html = renderToStaticMarkup(
+        <LinkifiedText text="Shipping #laravel" mentions={null} isStatic />,
+    );
+
+    assert.equal(html, 'Shipping #laravel');
+});
+
+test('keeps hashtags whole when they contain what looks like a domain or a mention', () => {
+    const html = renderToStaticMarkup(
+        <LinkifiedText
+            text="Learning #asp.net, #react.dev and #@alice"
+            mentions={{ alice: '019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b' }}
+        />,
+    );
+
+    assert.equal(html.match(/data-test="hashtag"/g)?.length, 3);
+    assert.ok(html.includes('>#asp.net</a>'));
+    assert.ok(html.includes('>#react.dev</a>'));
+    assert.ok(html.includes('>#@alice</a>'));
+    assert.ok(!html.includes('target="_blank"'));
+    assert.ok(!html.includes('data-test="mention"'));
+});
+
+test('leaves hashtags and colors in code alone when given a whole body', () => {
+    const html = renderToStaticMarkup(
+        <LinkifiedText
+            text={'see `#php` and\n```\n#include <x> #fff\n```\nthen #ok'}
+            mentions={null}
+        />,
+    );
+
+    assert.equal(html.match(/data-test="hashtag"/g)?.length, 1);
+    assert.ok(html.includes('>#ok</a>'));
+    assert.ok(!html.includes('data-test="color"'));
+});
+
+test('gives every wordmark its own key around hashtags', () => {
+    const fragment = LinkifiedText({
+        text: '/dev/null #go /dev/null',
+        mentions: null,
+    }) as ReactElement<{ children: ReactElement[] }>;
+    const keys = fragment.props.children
+        .filter((child) => typeof child === 'object' && child !== null)
+        .map((child) => child.key);
+
+    assert.equal(keys.length, 3);
+    assert.equal(new Set(keys).size, keys.length);
+});
+
+test('takes no link card from a hashtag', () => {
+    assert.deepEqual(typedLinks('Learning #asp.net https://example.org'), [
+        'https://example.org',
+    ]);
+});
+
+test('finds hashtags right after the marker of a quoted line, not after a second marker', () => {
+    const html = renderPage(
+        <CommitBody
+            segments={[{ type: 'text', text: '>#php\n>>#rust and `x`>#go' }]}
+            mentions={null}
+        />,
+    );
+
+    assert.equal(html.match(/data-test="hashtag"/g)?.length, 1);
+    assert.ok(html.includes('>#php</a>'));
+});
+
+test('neither counts nor offers a link inside a hashtag', () => {
+    assert.equal(bodyCharacterCount('#docs:example.com/' + 'a'.repeat(40)), 58);
+    assert.equal(
+        bodyCharacterCount('```\nx\n```\n>#docs:example.com/' + 'a'.repeat(40)),
+        69,
+    );
+    assert.deepEqual(
+        typedLinks('#docs:example.com and https://real.example.org'),
+        ['https://real.example.org'],
+    );
+    assert.deepEqual(typedLinks('>#see:nativephp.com\nlaravel.com'), [
+        'https://laravel.com',
+    ]);
+    assert.deepEqual(typedLinks('[#12](https://example.com/docs)'), [
+        'https://example.com/docs',
+    ]);
+    assert.ok(
+        renderToStaticMarkup(
+            <LinkifiedText
+                text="Run `#tag`:https://example.com"
+                mentions={null}
+                startsText
+            />,
+        ).includes('href="https://example.com"'),
+    );
+});
+
+test('links a hashtag that starts a quoted line at the start of a whole body', () => {
+    const hashtags = (text: string) =>
+        renderPage(
+            <LinkifiedText text={text} mentions={null} startsText />,
+        ).match(/data-test="hashtag"/g)?.length ?? 0;
+
+    assert.equal(hashtags('>#php is back'), 1);
+    assert.equal(hashtags('>>#php'), 0);
+    assert.equal(hashtags('`x`>#php'), 0);
+});
+
+test('shows hex colors as colors, not as hashtag links', () => {
+    const text = 'Brand orange is #ff8a4c.';
+    const html = renderToStaticMarkup(
+        <LinkifiedText text={text} mentions={null} />,
+    );
+
+    assert.equal(html.match(/data-test="hashtag"/g), null);
+    assert.ok(html.includes('data-test="color"'));
+    assert.equal(html.replace(/<[^>]*>/g, ''), text);
+});

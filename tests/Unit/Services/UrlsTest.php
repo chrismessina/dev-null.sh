@@ -138,6 +138,9 @@ it('does not mistake other text for a bare domain', function (string $text): voi
     expect($urls->first($text))->toBeNull();
 })->with([
     'email address' => 'Mail simon@nativephp.com',
+    'hashtag' => 'Learning #asp.net',
+    'fullwidth hashtag' => 'Learning ＃react.dev',
+    'hashtag with a scheme' => 'Weird #https://example.com',
     'handle' => 'Thanks @nativephp',
     'handle with a dot' => 'Thanks @nativephp.com',
     'version number' => 'Released 1.2.3 and v2.0.1',
@@ -291,4 +294,30 @@ it('does not shorten what it would not link', function (string $text): void {
     'code block' => ["```\nhttps://github.com/dev-null-sh/dev-null.sh/pulls?q=sort%3Aupdated-desc\n```"],
     'scheme only' => ['see https:// for details'],
     'longer than 2048 characters' => ['https://example.com/'.str_repeat('a', 2029)],
+    'inside a hashtag' => ['Read #docs:laravel.com/docs/12.x/eloquent-relationships first'],
+]);
+
+it('finds no links inside a hashtag', function (): void {
+    $urls = resolve(Urls::class);
+
+    expect($urls->all('#docs:example.com and https://real.example.org'))->toBe(['https://real.example.org'])
+        ->and($urls->first(">#see:nativephp.com\nlaravel.com"))->toBe('https://laravel.com')
+        ->and($urls->characterCount('#docs:example.com/'.str_repeat('a', 40)))->toBe(58);
+});
+
+it('finds no links inside a word starting with a hash, wherever the text around it was split', function (): void {
+    $urls = resolve(Urls::class);
+    $text = '`x`>#docs:example.com/abcdefghijklmnopqrstuvwxyz';
+
+    expect($urls->all($text))->toBe([])
+        ->and($urls->withShortenedUrls($text))->toBe($text)
+        ->and($urls->all('#'.str_repeat('a', 50).':rocket:example.com'))->toBe([]);
+});
+
+it('finds links after a hash that cannot start a hashtag', function (string $text, array $urls): void {
+    expect(resolve(Urls::class)->all($text))->toBe($urls);
+})->with([
+    'a markdown link to an issue' => ['[#12](https://example.com/docs)', ['https://example.com/docs']],
+    'after a url fragment' => ['<https://x.com/#a><https://example.com/docs>', ['https://x.com/#a', 'https://example.com/docs']],
+    'after code ending in a hashtag' => ['Run `#tag`:https://example.com', ['https://example.com']],
 ]);

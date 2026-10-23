@@ -153,13 +153,14 @@ final readonly class Urls
      * the word without a "(" or another label after it (so neither "nativephp.community", "array.at(-1)" nor
      * "socket.io.js"). There is no case-insensitive flag, so that the TLD's case can be checked.
      * Schemes cannot follow Unicode letters, numbers, marks or connector punctuation, as in resources/js/lib/urls.ts.
+     * Neither starts inside a word that starts with "#", so "#asp.net" and "#docs:example.com" are hashtags.
      */
     private function pattern(): string
     {
         $topLevelDomains = implode('|', [...self::TOP_LEVEL_DOMAINS, ...array_map(mb_strtoupper(...), self::TOP_LEVEL_DOMAINS)]);
 
-        return '/(?<![\p{L}\p{N}\p{M}\p{Pc}])[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\s<>]+'
-            .'|(?<![\p{L}\p{N}_.\/@-])(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:'.$topLevelDomains.')'
+        return '/(?<![\p{L}\p{N}\p{M}\p{Pc}])(?<!'.Hashtags::WordSoFar.')[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\s<>]+'
+            .'|(?<![\p{L}\p{N}_.\/@-])(?<!'.Hashtags::WordSoFar.')(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+(?:'.$topLevelDomains.')'
             .'(?![\p{L}\p{N}_(-]|\.[A-Za-z0-9])(?:[\/?#][^\s<>]*)?/u';
     }
 

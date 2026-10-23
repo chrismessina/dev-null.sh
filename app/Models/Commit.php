@@ -30,6 +30,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read float $hot_score
  * @property-read string $body
  * @property-read array<string, string>|null $mentions
+ * @property-read list<string>|null $hashtags
  * @property-read CommitStatus $status
  * @property-read string|null $link_preview_id
  * @property-read string|null $quoted_commit_id
@@ -56,6 +57,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read Collection<int, CommitImage> $images
  */
 #[Hidden([
+    'hashtags',
     'ai_decision',
     'ai_categories',
     'embedding',
@@ -114,6 +116,7 @@ final class Commit extends Model
             'pasteis_count' => 'integer',
             'body' => 'string',
             'mentions' => 'array',
+            'hashtags' => 'array',
             'status' => CommitStatus::class,
             'link_preview_id' => 'string',
             'quoted_commit_id' => 'string',
